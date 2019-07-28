@@ -1,0 +1,249 @@
+import numpy as np
+import random 
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import matplotlib.patches as mpatches
+
+
+##objets
+
+
+class plateau :
+    
+    def __init__(self,taille,deltaT=1,mut=0.5,nombre = 20):
+        
+        self.taille=taille
+        self.deltaT=deltaT
+        self.mut = mut
+        self.time = 0.0
+        self.nombre = nombre
+        
+    def placer_fd(self):
+        
+        self.matrice_coord = []
+        
+        for i in range(self.nombre):
+            
+            x_r = random.random() * self.taille
+            y_r = random.random() * self.taille
+            
+            self.matrice_coord.append([x_r,y_r])
+                
+class indiv:
+    
+    def __init__(self,vitesse,vision,plateau_env):
+        
+        self.direction = random.random() * 2* np.pi 
+        self.vitesse  =vitesse
+        self.vision = vision
+        self.energy = 200
+        self.reserve = 0
+        self.mut = plateau_env.mut
+        self.plateau_env = plateau_env
+        
+    def placer_random(self):
+        
+        x_r=random.random()*self.plateau_env.taille
+        y_r=random.random()*self.plateau_env.taille
+        self.position=(x_r,y_r)
+        
+    def deplacer(self):
+        
+        deltaT=self.plateau_env.deltaT
+        matrice_coord = self.plateau_env.matrice_coord
+        
+        for point in matrice_coord:
+            
+            distance = np.sqrt((point[0]-self.position[0])**2 + (self.position[1] - point[1])**2)
+           
+            if distance< self.vitesse * deltaT * self.vision:
+              
+                self.position = point
+                self.reserve+=1
+                self.energy += 500
+                self.plateau_env.matrice_coord.remove(point)
+                return None
+        choix_dir_r = random.random()
+        theta_r = random.random() * 2* np.pi 
+        if choix_dir_r>0.2:
+            
+            nouv_x = self.position[0] + self.vitesse * deltaT * np.cos(theta_r)
+            nouv_y = self.position[1] + self.vitesse * deltaT * np.sin(theta_r)
+            self.direction = theta_r
+        
+        if choix_dir_r<0.8:
+            nouv_x = self.position[0] + self.vitesse * deltaT * np.cos(self.direction)
+            nouv_y = self.position[1] + self.vitesse * deltaT * np.sin(self.direction)
+            
+        while nouv_x> self.plateau_env.taille or nouv_y>self.plateau_env.taille or nouv_x< 0 or nouv_y < 0:
+            
+            theta_r = random.random() * 2* np.pi 
+            nouv_x = self.position[0] + self.vitesse * deltaT * np.cos(theta_r)
+            nouv_y = self.position[1] + self.vitesse * deltaT * np.sin(theta_r)
+        
+        self.position = (nouv_x,nouv_y)            
+        self.energy -= self.vitesse **2 + 1/(1-self.vision)
+            
+        
+    def mutation(self):
+        
+        r=random.random()
+        
+        if r<self.mut:
+                
+            r_choix = random.random()
+            
+            if r_choix < 0.5:
+                r_vit = random.random()*2
+                self.vitesse = r_vit*self.vitesse
+            else:
+                r_vision = random.random()*2
+                self.vision = r_vision *self.vision
+                while self.vision >=1 : 
+                    r_vision = random.random()*2
+                    self.vision = r_vision *self.vision
+                
+
+##fonctions
+
+def init_pop(taille,N_ind):
+    
+    plat=plateau(taille)
+    
+    plat.placer_fd()
+    pop=[]
+    
+    for x in range(N_ind):
+        
+        sujet=indiv(0.6,0.8,plat)
+        sujet.placer_random()
+        pop.append(sujet)
+        
+    return pop,plat
+    
+    
+def step(pop,plat):
+    
+    for ind in pop:
+        
+        ind.deplacer()
+        if ind.energy < 0 :
+            pop.remove(ind)
+    
+    plat.time += plat.deltaT
+            
+    return pop
+    
+def fin_simu(pop,taille):   #clean la population et rend un nouveau plateau préparé
+    
+    nouv_pop = []
+    nouv_plat = plateau(taille)
+    nouv_plat.placer_fd()
+    
+    for sujet in pop:
+        
+        if sujet.reserve != 0:
+            
+            sujet_nouv_plat = indiv(sujet.vitesse,sujet.vision,nouv_plat)
+            sujet_nouv_plat.reserve = sujet.reserve
+            nouv_pop.append(sujet_nouv_plat)
+            
+    
+    return nouv_pop,nouv_plat
+            
+def breed(pop,plateau): #population après fin_simu ,nouveau plateau 
+    
+    pop_parent=[x for x in pop if x.reserve>1 ]
+    n=len(pop_parent)
+    
+    for i in range(int(n/2)):
+        
+        sujet1=pop_parent[i]
+        sujet2=pop_parent[i]
+        nouv_vit=(sujet1.vitesse + sujet2.vitesse)/2
+        nouv_vision = (sujet1.vision + sujet2.vision)/2
+        
+        nouv_sujet = indiv(nouv_vit,nouv_vision,plateau)
+        nouv_sujet.mutation()
+        pop.append(nouv_sujet)
+    
+    for sujet in pop:
+        sujet.reserve = 0
+        sujet.placer_random()
+
+    return pop
+    
+    
+def info_pop(pop):
+    n=len(pop)
+    vit_moy=0
+    vis_moy=0
+    
+    for ind in pop:
+        
+        vit_moy+= ind.vitesse
+        vis_moy+= ind.vision
+        
+    vit_moy = vit_moy /n
+    vis_moy = vis_moy /n
+    
+    print( '\nNombre d\'individus = ' + str(n) + " vitesse moyenne : " +str(vit_moy) + " vision moyenne : " + str(vis_moy) )
+    
+    
+    
+def process(taille,N_ind,N_gen_m, T_m = 100):
+    
+    pop,plat = init_pop(taille,N_ind)
+    N_gen = 0
+    
+    while N_gen < N_gen_m :
+        
+        print("\nGénération : #" + str(N_gen))
+        
+        while plat.time<T_m:
+            
+            axes=plt.gca()
+            axes.set_xlim(-0.1*taille,taille*1.1)
+            axes.set_ylim(-0.1*taille,taille*1.1)
+            plt.plot([0,taille,taille,0,0],[0,0,taille,taille,0] , color = 'red', label ='Bord')
+                
+            pos_x_nr = [coord[0] for coord in plat.matrice_coord]
+            pos_y_nr = [coord[1] for coord in plat.matrice_coord]
+            
+            pos_x = []
+            pos_y = []
+            for sujet in pop:
+                pos_x.append(sujet.position[0])
+                pos_y.append(sujet.position[1])
+            
+            plt.scatter(pos_x,pos_y,color ='black',label='Individus')
+            plt.scatter(pos_x_nr,pos_y_nr , color='green', label = 'Nourriture')
+            plt.legend(loc = 1)
+            plt.pause(0.1)
+            plt.clf()
+            step(pop,plat)
+            
+        plt.show()
+            
+            
+        I=input("Appuyer sur une touche")
+                
+        info_pop(pop)
+        
+        pop, plat =fin_simu(pop,taille)
+        
+        if len(pop)==0:
+            
+            print('fin à la #' + str(N_gen) + ' génération' )
+            return None
+            
+        pop = breed(pop,plat)
+        
+        N_gen += 1
+    
+    print('\nLa population a survécu')
+        
+
+
+
+
